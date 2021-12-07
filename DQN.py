@@ -1,10 +1,12 @@
+import random
+
 import torch
 import numpy as np
 from torch import nn
 import torch.nn.functional as F
 from torch import optim
 import os
-
+from collections import deque
 import math
 
 # the defination of the hyper parameters
@@ -45,7 +47,8 @@ class DQN(object):
         self.policy_net, self.target_net = Net().to(device), Net().to(device)
         self.learn_step = 0
         self.memory_counter = 0
-        self.memory = np.zeros((MEMORY_CAPACITY, N_STATE*2 + 2))
+        # self.memory = np.zeros((MEMORY_CAPACITY, N_STATE*2 + 2))
+        self.memory = deque(maxlen= MEMORY_CAPACITY)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=LR)
         self.loss_func = nn.MSELoss()
         self.eval_model_load_path = './model_eval.pt'
@@ -77,11 +80,12 @@ class DQN(object):
 
 
     def store_transition(self, s, a ,r, s_):
-        transition = np.hstack((s, a, r, s_))
-
+        # transition = np.hstack((s, a, r, s_))
+        transition = [s, a, r, s_]
+        self.memory.append(transition)
         # 这里的设计非常有意思，实现了memory的自动替换
-        index = self.memory_counter % MEMORY_CAPACITY
-        self.memory[index,:] = transition
+        # index = self.memory_counter % MEMORY_CAPACITY
+        # self.memory[index,:] = transition
         self.memory_counter += 1
 
     def optimize_model(self):
@@ -92,12 +96,17 @@ class DQN(object):
         self.learn_step += 1
 
         # get the samples to train the policy net
-        sample_index = np.random.choice(MEMORY_CAPACITY, BATCH_SIZE)
-        sample_batch = self.memory[sample_index, :]
-        batch_s = torch.FloatTensor(sample_batch[:, :N_STATE]).to(device)
-        batch_a = torch.LongTensor(sample_batch[:, N_STATE:N_STATE+1].astype(int)).to(device)
-        batch_r = torch.FloatTensor(sample_batch[:, N_STATE+1:N_STATE+2]).to(device)
-        batch_s_ = torch.FloatTensor(sample_batch[:, -N_STATE:]).to(device)
+        # sample_index = np.random.choice(MEMORY_CAPACITY, BATCH_SIZE)
+        # sample_batch = self.memory[sample_index, :]
+        sample_batch = random.sample(self.memory, BATCH_SIZE)
+        # batch_s = torch.FloatTensor(sample_batch[:, :N_STATE]).to(device)
+        batch_s = torch.FloatTensor(np.array([transition[0] for transition in sample_batch])).to(device)
+        # batch_a = torch.LongTensor(sample_batch[:, N_STATE:N_STATE+1].astype(int)).to(device)
+        batch_a = torch.LongTensor(np.array([transition[1] for transition in sample_batch])).unsqueeze(dim =1).to(device)
+        # batch_r = torch.FloatTensor(sample_batch[:, N_STATE+1:N_STATE+2]).to(device)
+        batch_r = torch.FloatTensor(np.array([transition[2] for transition in sample_batch])).to(device)
+        # batch_s_ = torch.FloatTensor(sample_batch[:, -N_STATE:]).to(device)
+        batch_s_ = torch.FloatTensor(np.array([transition[3] for transition in sample_batch])).to(device)
 
         #calculate the q_value
         q_eval = self.policy_net(batch_s).gather(1, batch_a)
